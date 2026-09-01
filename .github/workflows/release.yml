@@ -105,14 +105,15 @@ jobs:
           release_id=$(cat "$RUNNER_TEMP/release-id")
           archive="$RUNNER_TEMP/gooo-improvement-pairing-gate-v0.1.0.tar.gz"
           sums="$RUNNER_TEMP/SHA256SUMS"
-          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets")
+          draft=$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id")
+          assets=$(jq -c '.assets' <<<"$draft")
           expected_archive_digest="sha256:$(cut -d' ' -f1 "$sums")"
           expected_sums_digest="sha256:$(sha256sum "$sums" | cut -d' ' -f1)"
           upload_asset() {
             local path="$1"
             local name="$2"
             local content_type="$3"
-            gh api --method POST -H "Content-Type: $content_type" "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$name" --input "$path" >/dev/null
+            gh api --method POST -H "Content-Type: $content_type" "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$name" --input "$path" >/dev/null
           }
           archive_asset=$(jq --arg name "$(basename "$archive")" '[.[] | select(.name == $name)] | if length == 1 then .[0] else empty end' <<<"$assets")
           if [[ -n "$archive_asset" ]]; then
