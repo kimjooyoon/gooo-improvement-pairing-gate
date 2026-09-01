@@ -61,8 +61,13 @@ jobs:
           TAG: v0.1.0
         run: |
           set -euo pipefail
-          gh release create "$TAG" --draft --target "$TARGET_SHA" --title "$TAG" --notes "Exact matched before/after integer pairing gate release."
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.id' > "$RUNNER_TEMP/release-id"
+          release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$TAG\" and .draft == true) | .id" | head -n 1)
+          if [[ -z "$release_id" ]]; then
+            gh release create "$TAG" --draft --target "$TARGET_SHA" --title "$TAG" --notes "Exact matched before/after integer pairing gate release."
+            release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$TAG\" and .draft == true) | .id" | head -n 1)
+          fi
+          test -n "$release_id"
+          printf '%s\n' "$release_id" > "$RUNNER_TEMP/release-id"
 
       - name: Upload release assets
         shell: bash
