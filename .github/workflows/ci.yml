@@ -1,0 +1,66 @@
+name: post-main CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.27
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.x'
+          cache: false
+
+      - name: Run authoritative measured verification
+        id: measured
+        shell: bash
+        run: |
+          set +e
+          evidence="$RUNNER_TEMP/gooo-ci-evidence"
+          binary="$RUNNER_TEMP/gooo-pairing-gate"
+          mkdir -p "$evidence" "$evidence/conformance-output" "$evidence/integration-output"
+
+          bash scripts/ci/measure.sh "$evidence/compile.json" "$evidence/compile.log" go test -run '^$' -count=1 ./...
+          compile_status=$?
+
+          bash scripts/ci/measure.sh "$evidence/build.json" "$evidence/build.log" go build -trimpath -o "$binary" ./cmd/gooo-pairing-gate
+          build_status=$?
+
+          bash scripts/ci/measure.sh "$evidence/test.json" "$evidence/test.log" bash -c "go test -count=1 -json ./... | tee '$evidence/test-results.json'; test \${PIPESTATUS[0]} -eq 0"
+          test_status=$?
+
+          bash scripts/ci/measure.sh "$evidence/conformance.json" "$evidence/conformance.log" bash -c "'$binary' --source . --fixture testdata/canonical-fixtures.json --metacode .gooo/pairing-gate.gooo --output '$evidence/conformance-output' && bash scripts/conformance.sh '$binary' '$evidence/conformance-output'"
+          conformance_status=$?
+
+          bash scripts/ci/measure.sh "$evidence/integration.json" "$evidence/integration.log" bash -c "bash scripts/integration.sh '$binary' '$evidence/integration-output'"
+          integration_status=$?
+
+          bash scripts/ci/collect-evidence.sh "$evidence"
+          overall_status=0
+          for status in "$compile_status" "$build_status" "$test_status" "$conformance_status" "$integration_status"; do
+            if [[ "$status" != "0" ]]; then
+              overall_status=1
+            fi
+          done
+          exit "$overall_status"
+
+      - name: Preserve CI evidence, including failed runs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gooo-improvement-pairing-gate-ci-${{ github.run_id }}
+          path: ${{ runner.temp }}/gooo-ci-evidence
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,122 @@
+name: v0.1.0 release
+
+on:
+  workflow_run:
+    workflows: [post-main CI]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the verified main commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Set up Go 1.27
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.x'
+          cache: false
+
+      - name: Verify exact target and generate release output
+        shell: bash
+        env:
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          output="$RUNNER_TEMP/pairing-output"
+          mkdir -p "$output"
+          go run ./cmd/gooo-pairing-gate --source . --fixture testdata/canonical-fixtures.json --metacode .gooo/pairing-gate.gooo --output "$output"
+          test "$(find "$output" -maxdepth 1 -type f | wc -l | tr -d ' ')" = "5"
+          archive="$RUNNER_TEMP/gooo-improvement-pairing-gate-v0.1.0.tar.gz"
+          tar -czf "$archive" -C "$output" pairing-manifest.json pairing-events.ndjson comparison-receipt.json decision-receipt.json report.md
+          sha256sum "$archive" > "$RUNNER_TEMP/SHA256SUMS"
+
+      - name: Create annotated immutable tag
+        shell: bash
+        env:
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          TAG: v0.1.0
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git tag -a "$TAG" "$TARGET_SHA" -m "gooo improvement pairing gate $TAG"
+          git push origin "refs/tags/$TAG"
+
+      - name: Create draft release
+        id: draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          TAG: v0.1.0
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" --draft --target "$TARGET_SHA" --title "$TAG" --notes "Exact matched before/after integer pairing gate release."
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.id' > "$RUNNER_TEMP/release-id"
+
+      - name: Upload release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.1.0
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" "$RUNNER_TEMP/gooo-improvement-pairing-gate-v0.1.0.tar.gz" "$RUNNER_TEMP/SHA256SUMS"
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.1.0
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" --draft=false
+
+      - name: Verify public tag, immutable release, asset size, and digest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          TAG: v0.1.0
+        run: |
+          set -euo pipefail
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")
+          test "$(jq -r '.draft' <<<"$release")" = "false"
+          test "$(jq -r '.immutable' <<<"$release")" = "true"
+
+          tag_ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")
+          test "$(jq -r '.object.type' <<<"$tag_ref")" = "tag"
+          tag_object_sha=$(jq -r '.object.sha' <<<"$tag_ref")
+          tag_object=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object_sha")
+          test "$(jq -r '.object.sha' <<<"$tag_object")" = "$TARGET_SHA"
+
+          archive_name=gooo-improvement-pairing-gate-v0.1.0.tar.gz
+          local_size=$(stat -c '%s' "$RUNNER_TEMP/$archive_name")
+          local_digest=$(cut -d' ' -f1 "$RUNNER_TEMP/SHA256SUMS")
+          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/$(jq -r '.id' <<<"$release")/assets")
+          api_size=$(jq -r --arg name "$archive_name" '.[] | select(.name == $name) | .size' <<<"$assets")
+          api_digest=$(jq -r --arg name "$archive_name" '.[] | select(.name == $name) | .digest' <<<"$assets")
+          test "$api_size" = "$local_size"
+          test "$api_digest" = "sha256:$local_digest"
+
+      - name: Preserve release verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gooo-improvement-pairing-gate-release-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/pairing-output
+            ${{ runner.temp }}/SHA256SUMS
+            ${{ runner.temp }}/gooo-improvement-pairing-gate-v0.1.0.tar.gz
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,109 @@
+gooo improvement_pairing_gate v0.1.0
+package improvement_pairing_gate
+namespace gooo.self_improvement
+operation exact_matched_integer_pair
+
+identity-field scenario_id
+identity-field source_digest
+identity-field contract_digest
+identity-field fixture_digest
+identity-field toolchain_digest
+identity-field runner_identity
+
+measurement-field before integer
+measurement-field after integer
+measurement-field delta integer
+measurement-field direction enum
+direction positive IMPROVED
+direction zero UNCHANGED
+direction negative REGRESSED
+direction unknown UNKNOWN
+
+status-precedence REFUTED UNKNOWN CLOSED
+unknown-field stage
+unknown-field step
+unknown-field reason
+unknown-field unknown_class
+unknown-field next_operation
+unknown-field blocked_by
+
+evidence-digest algorithm sha256 input identity_and_values
+contradiction direction_reversal
+contradiction evidence_digest
+
+inventory-exclude README.md
+inventory-exclude .git
+inventory-exclude cache
+inventory-exclude vendor
+inventory-exclude generated
+
+runtime-stage compile
+runtime-stage build
+runtime-stage test
+runtime-stage conformance
+runtime-stage integration
+metric wall_ms
+metric peak_rss_kib
+metric tests_total
+metric tests_selected
+metric tests_executed
+metric tests_reused
+metric tests_failed
+metric tests_unknown
+metric go_files
+metric go_lines
+metric gooo_files
+metric gooo_lines
+metric files
+metric regular_files
+metric descendant_dirs
+
+artifact manifest file pairing-manifest.json schema gooo/improvement-pairing-gate/manifest/v1
+artifact events file pairing-events.ndjson schema gooo/improvement-pairing-gate/events/v1
+artifact comparison file comparison-receipt.json schema gooo/improvement-pairing-gate/comparison-receipt/v1
+artifact decision file decision-receipt.json schema gooo/improvement-pairing-gate/decision-receipt/v1
+artifact report file report.md schema gooo/improvement-pairing-gate/report/v1
+
+claim language_utility status UNKNOWN reason "No external evidence is supplied for whole-language utility."
+claim global_improvement status UNKNOWN reason "No external evidence is supplied for a global improvement claim."
+
+activity load_scenario input Fixture output Scenario computes "load one fixture case"
+activity load_before_observation input Scenario output BeforeObservation computes "select the before observation"
+activity load_after_observation input Scenario output AfterObservation computes "select the after observation"
+activity compute_comparison_identity input BeforeObservation output ComparisonIdentity computes "derive the declared six-field identity tuple"
+activity pair_integer_measurements input Scenario output IntegerPair computes "pair exact integer measurements and derive delta"
+activity classify_pair input IntegerPair output PairFinding computes "classify identity and integer evidence"
+activity resolve_precedence input PairFinding output Decision computes "apply declared status precedence"
+activity generate_artifacts input Decision output Artifacts computes "generate the declared five artifacts"
+
+binding load_scenario role scenario_loader
+binding load_before_observation role before_loader
+binding load_after_observation role after_loader
+binding compute_comparison_identity role identity_comparator
+binding pair_integer_measurements role integer_pairer
+binding classify_pair role pair_classifier
+binding resolve_precedence role precedence_resolver
+binding generate_artifacts role artifact_generator
+
+edge load_scenario -> load_before_observation type Scenario
+edge load_before_observation -> load_after_observation type ObservationPair
+edge load_after_observation -> compute_comparison_identity type ComparisonInputs
+edge compute_comparison_identity -> pair_integer_measurements type ComparisonIdentity
+edge pair_integer_measurements -> classify_pair type IntegerPair
+edge classify_pair -> resolve_precedence type PairFinding
+edge resolve_precedence -> generate_artifacts type Decision
+
+case healthy-improvement CLOSED
+case unchanged-exact-pair CLOSED
+case second-improvement CLOSED
+case identity-mismatch UNKNOWN
+case identity-missing UNKNOWN
+case runner-changed UNKNOWN
+case non-integer UNKNOWN
+case regression-direction-reversal REFUTED
+case evidence-digest-contradiction REFUTED
+
+unknown-case identity-mismatch stage COMPARE step CHECK_IDENTITY reason "The before and after six-field identity tuples differ." unknown_class identity_mismatch next_operation "obtain an exact matched observation pair" blocked_by identity_fields
+unknown-case identity-missing stage COMPARE step CHECK_IDENTITY reason "At least one required identity field is empty." unknown_class identity_missing next_operation "supply every required identity field" blocked_by missing_identity_field
+unknown-case runner-changed stage COMPARE step CHECK_IDENTITY reason "The runner_identity differs between before and after." unknown_class runner_changed next_operation "rerun both observations on one runner identity" blocked_by runner_identity
+unknown-case non-integer stage PAIR step PARSE_INTEGER reason "Before or after is not an exact JSON integer." unknown_class non_integer_measurement next_operation "record exact integer measurements" blocked_by measurement_value

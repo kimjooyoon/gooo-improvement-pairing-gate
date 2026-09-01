@@ -1,0 +1,60 @@
+{
+  "schema": "gooo/improvement-pairing-gate/fixtures/v1",
+  "cases": [
+    {
+      "id": "healthy-improvement",
+      "before": {"value": 10, "identity": {"scenario_id": "healthy", "source_digest": "source-1", "contract_digest": "contract-1", "fixture_digest": "fixture-1", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "after": {"value": 12, "identity": {"scenario_id": "healthy", "source_digest": "source-1", "contract_digest": "contract-1", "fixture_digest": "fixture-1", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "claimed_direction": "IMPROVED"
+    },
+    {
+      "id": "unchanged-exact-pair",
+      "before": {"value": 7, "identity": {"scenario_id": "unchanged", "source_digest": "source-2", "contract_digest": "contract-1", "fixture_digest": "fixture-2", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "after": {"value": 7, "identity": {"scenario_id": "unchanged", "source_digest": "source-2", "contract_digest": "contract-1", "fixture_digest": "fixture-2", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "claimed_direction": "UNCHANGED"
+    },
+    {
+      "id": "second-improvement",
+      "before": {"value": 4, "identity": {"scenario_id": "second", "source_digest": "source-3", "contract_digest": "contract-1", "fixture_digest": "fixture-3", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "after": {"value": 9, "identity": {"scenario_id": "second", "source_digest": "source-3", "contract_digest": "contract-1", "fixture_digest": "fixture-3", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "claimed_direction": "IMPROVED"
+    },
+    {
+      "id": "identity-mismatch",
+      "before": {"value": 10, "identity": {"scenario_id": "mismatch", "source_digest": "source-before", "contract_digest": "contract-1", "fixture_digest": "fixture-4", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "after": {"value": 12, "identity": {"scenario_id": "mismatch", "source_digest": "source-after", "contract_digest": "contract-1", "fixture_digest": "fixture-4", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "claimed_direction": "IMPROVED"
+    },
+    {
+      "id": "identity-missing",
+      "before": {"value": 5, "identity": {"scenario_id": "missing", "source_digest": "source-5", "contract_digest": "contract-1", "fixture_digest": "", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "after": {"value": 8, "identity": {"scenario_id": "missing", "source_digest": "source-5", "contract_digest": "contract-1", "fixture_digest": "", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "claimed_direction": "IMPROVED"
+    },
+    {
+      "id": "runner-changed",
+      "before": {"value": 5, "identity": {"scenario_id": "runner", "source_digest": "source-6", "contract_digest": "contract-1", "fixture_digest": "fixture-6", "toolchain_digest": "go1.27", "runner_identity": "runner-before"}},
+      "after": {"value": 8, "identity": {"scenario_id": "runner", "source_digest": "source-6", "contract_digest": "contract-1", "fixture_digest": "fixture-6", "toolchain_digest": "go1.27", "runner_identity": "runner-after"}},
+      "claimed_direction": "IMPROVED"
+    },
+    {
+      "id": "non-integer",
+      "before": {"value": 5, "identity": {"scenario_id": "fraction", "source_digest": "source-7", "contract_digest": "contract-1", "fixture_digest": "fixture-7", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "after": {"value": 8.5, "identity": {"scenario_id": "fraction", "source_digest": "source-7", "contract_digest": "contract-1", "fixture_digest": "fixture-7", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "claimed_direction": "IMPROVED"
+    },
+    {
+      "id": "regression-direction-reversal",
+      "before": {"value": 12, "identity": {"scenario_id": "regression", "source_digest": "source-8", "contract_digest": "contract-1", "fixture_digest": "fixture-8", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "after": {"value": 9, "identity": {"scenario_id": "regression", "source_digest": "source-8", "contract_digest": "contract-1", "fixture_digest": "fixture-8", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "claimed_direction": "IMPROVED"
+    },
+    {
+      "id": "evidence-digest-contradiction",
+      "before": {"value": 8, "identity": {"scenario_id": "digest", "source_digest": "source-9", "contract_digest": "contract-1", "fixture_digest": "fixture-9", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "after": {"value": 10, "identity": {"scenario_id": "digest", "source_digest": "source-9", "contract_digest": "contract-1", "fixture_digest": "fixture-9", "toolchain_digest": "go1.27", "runner_identity": "runner-1"}},
+      "claimed_direction": "IMPROVED",
+      "evidence_digest": "sha256:contradictory-evidence"
+    }
+  ]
+}
