@@ -4,19 +4,25 @@ on:
   workflow_run:
     workflows: [post-main CI]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact previously verified main commit to resume a matching draft release
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   release:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    if: (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') || (github.event_name == 'workflow_dispatch' && inputs.target_sha != '')
     runs-on: ubuntu-latest
     steps:
       - name: Check out the verified main commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       - name: Set up Go 1.27
@@ -28,7 +34,7 @@ jobs:
       - name: Verify exact target and generate release output
         shell: bash
         env:
-          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$TARGET_SHA"
@@ -43,21 +49,29 @@ jobs:
       - name: Create annotated immutable tag
         shell: bash
         env:
-          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.event.workflow_run.head_sha }}
           TAG: v0.1.0
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git tag -a "$TAG" "$TARGET_SHA" -m "gooo improvement pairing gate $TAG"
-          git push origin "refs/tags/$TAG"
+          existing_ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" 2>/dev/null || true)
+          if [[ -n "$existing_ref" ]]; then
+            test "$(jq -r '.object.type' <<<"$existing_ref")" = "tag"
+            existing_tag_object=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$(jq -r '.object.sha' <<<"$existing_ref")")
+            test "$(jq -r '.object.sha' <<<"$existing_tag_object")" = "$TARGET_SHA"
+          else
+            git tag -a "$TAG" "$TARGET_SHA" -m "gooo improvement pairing gate $TAG"
+            git push origin "refs/tags/$TAG"
+          fi
 
       - name: Create draft release
         id: draft
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.event.workflow_run.head_sha }}
           TAG: v0.1.0
         run: |
           set -euo pipefail
@@ -67,6 +81,9 @@ jobs:
             release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$TAG\" and .draft == true) | .id" | head -n 1)
           fi
           test -n "$release_id"
+          draft=$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id")
+          test "$(jq -r '.draft' <<<"$draft")" = "true"
+          test "$(jq -r '.target_commitish' <<<"$draft")" = "$TARGET_SHA"
           printf '%s\n' "$release_id" > "$RUNNER_TEMP/release-id"
 
       - name: Upload release assets
@@ -76,7 +93,32 @@ jobs:
           TAG: v0.1.0
         run: |
           set -euo pipefail
-          gh release upload "$TAG" "$RUNNER_TEMP/gooo-improvement-pairing-gate-v0.1.0.tar.gz" "$RUNNER_TEMP/SHA256SUMS"
+          release_id=$(cat "$RUNNER_TEMP/release-id")
+          archive="$RUNNER_TEMP/gooo-improvement-pairing-gate-v0.1.0.tar.gz"
+          sums="$RUNNER_TEMP/SHA256SUMS"
+          assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets")
+          expected_archive_digest="sha256:$(cut -d' ' -f1 "$sums")"
+          expected_sums_digest="sha256:$(sha256sum "$sums" | cut -d' ' -f1)"
+          upload_asset() {
+            local path="$1"
+            local name="$2"
+            local content_type="$3"
+            gh api --method POST -H "Content-Type: $content_type" "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$name" --input "$path" >/dev/null
+          }
+          archive_asset=$(jq --arg name "$(basename "$archive")" '[.[] | select(.name == $name)] | if length == 1 then .[0] else empty end' <<<"$assets")
+          if [[ -n "$archive_asset" ]]; then
+            test "$(jq -r '.size' <<<"$archive_asset")" = "$(stat -c '%s' "$archive")"
+            test "$(jq -r '.digest' <<<"$archive_asset")" = "$expected_archive_digest"
+          else
+            upload_asset "$archive" "$(basename "$archive")" "application/gzip"
+          fi
+          sums_asset=$(jq --arg name "$(basename "$sums")" '[.[] | select(.name == $name)] | if length == 1 then .[0] else empty end' <<<"$assets")
+          if [[ -n "$sums_asset" ]]; then
+            test "$(jq -r '.size' <<<"$sums_asset")" = "$(stat -c '%s' "$sums")"
+            test "$(jq -r '.digest' <<<"$sums_asset")" = "$expected_sums_digest"
+          else
+            upload_asset "$sums" "$(basename "$sums")" "text/plain"
+          fi
 
       - name: Publish release
         shell: bash
@@ -85,13 +127,14 @@ jobs:
           TAG: v0.1.0
         run: |
           set -euo pipefail
-          gh release edit "$TAG" --draft=false
+          release_id=$(cat "$RUNNER_TEMP/release-id")
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" -F draft=false >/dev/null
 
       - name: Verify public tag, immutable release, asset size, and digest
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.event.workflow_run.head_sha }}
           TAG: v0.1.0
         run: |
           set -euo pipefail
