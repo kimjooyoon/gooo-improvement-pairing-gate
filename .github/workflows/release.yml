@@ -1,13 +1,14 @@
 name: v0.1.0 release
 
 on:
-  workflow_run:
-    workflows: [post-main CI]
-    types: [completed]
   workflow_dispatch:
     inputs:
       target_sha:
         description: Exact previously verified main commit to resume a matching draft release
+        required: true
+        type: string
+      post_main_run_id:
+        description: Successful post-main CI run that produced target_sha
         required: true
         type: string
 
@@ -16,13 +17,13 @@ permissions:
 
 jobs:
   release:
-    if: (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') || (github.event_name == 'workflow_dispatch' && inputs.target_sha != '')
+    if: inputs.target_sha != '' && inputs.post_main_run_id != ''
     runs-on: ubuntu-latest
     steps:
       - name: Check out the verified main commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.event.workflow_run.head_sha }}
+          ref: ${{ inputs.target_sha }}
           fetch-depth: 0
 
       - name: Set up Go 1.27
@@ -34,9 +35,17 @@ jobs:
       - name: Verify exact target and generate release output
         shell: bash
         env:
-          TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.event.workflow_run.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+          POST_MAIN_RUN_ID: ${{ inputs.post_main_run_id }}
         run: |
           set -euo pipefail
+          post_main=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$POST_MAIN_RUN_ID")
+          test "$(jq -r '.name' <<<"$post_main")" = "post-main CI"
+          test "$(jq -r '.event' <<<"$post_main")" = "push"
+          test "$(jq -r '.head_branch' <<<"$post_main")" = "main"
+          test "$(jq -r '.head_sha' <<<"$post_main")" = "$TARGET_SHA"
+          test "$(jq -r '.conclusion' <<<"$post_main")" = "success"
           test "$(git rev-parse HEAD)" = "$TARGET_SHA"
           output="$RUNNER_TEMP/pairing-output"
           mkdir -p "$output"
@@ -50,7 +59,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.event.workflow_run.head_sha }}
+          TARGET_SHA: ${{ inputs.target_sha }}
           TAG: v0.1.0
         run: |
           set -euo pipefail
@@ -71,7 +80,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.event.workflow_run.head_sha }}
+          TARGET_SHA: ${{ inputs.target_sha }}
           TAG: v0.1.0
         run: |
           set -euo pipefail
